@@ -157,7 +157,7 @@
 <h1 id="lock的种类"><a href="#lock的种类" class="headerlink" title="lock的种类"></a>lock的种类</h1><p>MySQL Lock大体上可以分为：表锁、行锁、意向锁三种。</p>
 <p><img src="/img/mysql_lock/Locks.png" alt></p>
 <h2 id="共享-排他锁"><a href="#共享-排他锁" class="headerlink" title="共享/排他锁"></a>共享/排他锁</h2><p>行锁分为：<code>S Lock</code>和<code>X Lock</code>。<code>S Lock</code> ：读锁；<code>X Lock</code>：写锁。<br>两锁之间的兼容性如下。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">       X         S</span><br><span class="line">X     不兼容     不兼容</span><br><span class="line">S     不兼容     不兼容</span><br></pre></td></tr></table></figure>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">       X         S</span><br><span class="line">X     不兼容     不兼容</span><br><span class="line">S     不兼容     兼容</span><br></pre></td></tr></table></figure>
 
 <p>简单总结为：<code>读锁可以读，读锁不可写；写锁不可读也tm不可写。</code></p>
 <h2 id="意向锁"><a href="#意向锁" class="headerlink" title="意向锁"></a>意向锁</h2><p>InnoDB支持多粒度的锁，即：允许表锁和行锁同时存在。<br>但是，假如表锁覆盖了行锁的数据，所以表锁和行锁也会产生冲突。如:</p>
@@ -166,17 +166,17 @@
 <p>这样，表锁和行锁之间就产生了冲突，为了解决这种表锁和行锁共存的问题，就产生了<code>意向锁</code>这个东西。<br>意向锁：从字面意思也很好理解，就是提前表明一个“意向”。</p>
 <p>意向锁分为：</p>
 <ul>
-<li><code>意向共享锁</code>。它预示着，事务有意向对表中的”某些行”加S锁。<code>select xxxx lock in share mode</code>，要设置<code>IS</code>锁。</li>
-<li><code>意向排他锁</code>。它预示着，事务有意向表中的“某些行”加X锁。<code>select xxx for update</code>，要设置<code>IX</code>锁。</li>
+<li><code>意向共享锁</code>。它预示着，事务正在或者有意向对表中的”某些行”加S锁。<code>select xxxx lock in share mode</code>，要设置<code>IS</code>锁。</li>
+<li><code>意向排他锁</code>。它预示着，事务正在或者有意向表中的“某些行”加X锁。<code>select xxx for update</code>，要设置<code>IX</code>锁。</li>
 </ul>
 <p>但意向锁仅仅是表明意向，它其实非常弱，意向锁之间可以相互并行，并不是排斥的：<br>意向锁之间的兼容性问题：</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">      IS     IX</span><br><span class="line"></span><br><span class="line">IS   兼容    兼容</span><br><span class="line"></span><br><span class="line">IX   兼容    兼容</span><br></pre></td></tr></table></figure>
 
-<p>但是，意向锁可以和行锁互斥。</p>
+<p>但是，意向锁可以和表锁互斥。(注意：文中 S 和 X均为表锁)</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">        S                X</span><br><span class="line"></span><br><span class="line">IS     兼容           互斥不兼容</span><br><span class="line"></span><br><span class="line">IX    互斥不兼容        互斥不兼容</span><br></pre></td></tr></table></figure>
 
 <p>于是，上述现象就变为了：</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">trx1 BEGIN</span><br><span class="line"></span><br><span class="line">trx1 给 T1 先加IX ，然后在某一行记录加X锁。</span><br><span class="line"></span><br><span class="line">trx2 BEGIN</span><br><span class="line"></span><br><span class="line">trx2 给 T1 加表锁（事务被阻塞，等待加锁成功)</span><br><span class="line"></span><br><span class="line">trx2 修改表结构</span><br></pre></td></tr></table></figure>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">trx1 BEGIN</span><br><span class="line"></span><br><span class="line">trx1 给 T1 先加IX ，然后在某一行记录加X锁。</span><br><span class="line"></span><br><span class="line">trx2 BEGIN</span><br><span class="line"></span><br><span class="line">trx2 给 T1 加表锁X（事务被阻塞，等待加锁成功)</span><br><span class="line"></span><br><span class="line">trx2 修改表结构</span><br></pre></td></tr></table></figure>
 
 <h2 id="主键自增锁"><a href="#主键自增锁" class="headerlink" title="主键自增锁"></a>主键自增锁</h2><p>自增锁(<code>auto-inc Locks</code>)是一种特殊的表级锁，专门针对事务插入<code>AUTO_INCREMENT</code>类型的列，往往就是主键列。可以保证主键的值自增是“原子操作”，不会出现一致性、唯一性问题。</p>
 <h1 id="行锁的具体分类"><a href="#行锁的具体分类" class="headerlink" title="行锁的具体分类"></a>行锁的具体分类</h1><p><img src="/img/mysql_lock/arithmetic.png" alt></p>
